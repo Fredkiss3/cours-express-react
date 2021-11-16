@@ -9,8 +9,10 @@
 
 ### 1 - Il faut lancer la base de données en amont
 
-pour cela vous devez récupérer le fichier `ragnarok.sql` et le lancer
-dans votre client de base de données (PHPMYADMIN, MYSQL WORKBENCH, Adminer, ...)
+pour cela, vous devez :
+    
+- Créer une base de données du nom de votre choix  
+- Récupérer le fichier `ragnarok.sql` et le lancer dans cette base de données créée
 
 ### 2 - modifier le fichier `src/config/dev.env` pour correspondre à la base de données
 
