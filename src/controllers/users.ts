@@ -1,0 +1,93 @@
+import { pool } from '../config/database';
+import { Request, Response } from 'express';
+import bcrypt from 'bcrypt';
+
+export const creerClient = async (req: Request, res: Response, next: any) => {
+    let connexion;
+    try {
+        connexion = await pool.getConnection();
+
+        // On hashe le mot de passe
+        const mdpHashe = await bcrypt.hash(req.body.mdp, 12);
+
+        // les "?" sont des marqueurs pour indiquer que la requête est préparée
+        const result = await connexion.query(`CALL CreerClient(?, ?, ?, ?)`, [
+            // correspond à => { nom: "...", prenom: "...", email:  "...", mdp: "..." }
+            req.body.nom,
+            req.body.prenom,
+            req.body.email,
+            mdpHashe,
+        ]);
+        return res.status(200).json({ success: result });
+    } catch (error) {
+        // @ts-ignore
+        return res.status(400).json({ error: error.message });
+    } finally {
+        if (connexion) connexion.end();
+    }
+};
+
+export const recupererClient = async (
+    req: Request,
+    res: Response,
+    next: any
+) => {
+    let connexion;
+    try {
+        connexion = await pool.getConnection();
+
+        const id = req.params[0]; // correspond à => :id
+
+        const result = await connexion.query(`CALL GetClientParId(?)`, [id]);
+        return res.status(200).json({ success: result });
+    } catch (error) {
+        // @ts-ignore
+        return res.status(400).json({ error: error.message });
+    } finally {
+        if (connexion) connexion.end();
+    }
+};
+
+export const authentifierClient = async (
+    req: Request,
+    res: Response,
+    next: any
+) => {
+    let connexion;
+    try {
+        connexion = await pool.getConnection();
+
+        const email = req.body.email;
+
+        const result = await connexion.query(`CALL GetClientParEmail(?)`, [
+            email,
+        ]);
+
+        // Vérifier l'adresse email
+        if (result[0].length > 0) {
+            const client = result[0][0];
+
+            // Vérifier le mot de passe
+            const match = await bcrypt.compare(req.body.mdp, client.mdp);
+            if (match) {
+                return res.status(200).json({
+                    success: 'Connexion effectuée avec succès',
+                    client: client,
+                });
+            } else {
+                return res
+                    .status(400)
+                    .json({ error: 'Mot de passe incorrect' });
+            }
+        } else {
+            return res
+                .status(400)
+                .json({ error: "Cet email n'appartient à aucun client" });
+        }
+    } catch (error) {
+        // @ts-ignore
+        return res.status(400).json({ error: error.message });
+    } finally {
+        if (connexion) connexion.end();
+    }
+};
