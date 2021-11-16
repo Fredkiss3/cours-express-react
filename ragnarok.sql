@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : db
--- Généré le : mar. 16 nov. 2021 à 14:30
+-- Généré le : mar. 16 nov. 2021 à 16:48
 -- Version du serveur : 10.6.4-MariaDB-1:10.6.4+maria~focal
 -- Version de PHP : 7.4.25
 
@@ -25,79 +25,178 @@ DELIMITER $$
 --
 -- Procédures
 --
-CREATE DEFINER=`root`@`%` PROCEDURE `CreerAdresse` (IN `idPersonne` INT, IN `estPrestaire` BOOLEAN, IN `rue` VARCHAR(255), IN `codePostal` VARCHAR(5), IN `ville` VARCHAR(40), IN `pays` VARCHAR(40))  BEGIN   
-   IF estPrestaire = 1 THEN
-      INSERT INTO Adresse(rue, codePostal, ville, pays, prestataire_id) VALUES(rue, codePostal, ville, pays, idPersonne);
-   ELSE
-   	 INSERT INTO  Adresse(rue, codePostal, ville, pays, client_id) VALUES(rue, codePostal, ville, pays, idPersonne);
-   END IF;
+CREATE DEFINER=`root`@`%` PROCEDURE `AjouterLigneCommande` (IN `quantite` INT, IN `command_id` INT, IN `produit_id` INT)  BEGIN
+    INSERT INTO LigneCommande(quantite, commande_id, produit_id) VALUES (quantite, command_id, produit_id);
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `AppliquerCodePromo` (IN `code_promo_id` INT, IN `commande_id` INT)  BEGIN
+    DECLARE nb_utilisations INT;
+    DECLARE nb_utilisationsMax INT;
+    DECLARE sommeMin FLOAT;
+    DECLARE sommeCommande FLOAT;
+    DECLARE date_debut DATE;
+    DECLARE date_fin DATE;
+
+    # Vérifier que le nombre d'utilisations du code promo n'est pas dépassé
+    SELECT nombreUtilisationMax, dateDebut, dateExpiration, sommeMinimum
+    INTO nb_utilisationsMax, date_debut, date_fin, sommeMin
+    FROM CodePromo
+    WHERE id = code_promo_id;
+
+    SELECT COUNT(codepromo_id)
+    INTO nb_utilisations
+    FROM Commande
+    WHERE codepromo_id = code_promo_id
+      AND codepromo_id IS NOT NULL;
+
+    # Vérifier que le nombre d'utilisations du code promo n'est pas dépassé
+    if (nb_utilisations >= nb_utilisationsMax) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Le code promo est déjà utilisé trop de fois';
+    END IF;
+
+    # Vérifier que la promo est encore valide
+    if (date_debut > NOW() OR date_fin < NOW()) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La promo n''est plus valide';
+    END IF;
+
+    # Vérifier que la somme minimum est atteinte pour appliquer le code promo
+    SET sommeCommande = CalculerSommeLignesCommande(commande_id);
+
+    if (sommeCommande < sommeMin) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La somme minimum pour appliquer le code promo n''est pas atteinte';
+    END IF;
+
+    # Application du code promo sur  la commande
+    UPDATE Commande
+    SET codepromo_id = code_promo_id
+    WHERE id = commande_id;
+
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `CreateCommande` (IN `addresse_livraison_id` INT)  BEGIN
+    INSERT INTO Commande(adresse_livraison_id)  VALUES (addresse_livraison_id);
+END$$
+
+CREATE DEFINER=`root`@`%` PROCEDURE `CreerAdresse` (IN `idPersonne` INT, IN `estPrestaire` BOOLEAN, IN `rue` VARCHAR(255), IN `codePostal` VARCHAR(5), IN `ville` VARCHAR(40), IN `pays` VARCHAR(40))  BEGIN
+    IF estPrestaire = 1 THEN
+        INSERT INTO Adresse(rue, codePostal, ville, pays, prestataire_id) VALUES(rue, codePostal, ville, pays, idPersonne);
+    ELSE
+        INSERT INTO  Adresse(rue, codePostal, ville, pays, client_id) VALUES(rue, codePostal, ville, pays, idPersonne);
+    END IF;
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `CreerAvis` (IN `note` INT(1), IN `commentaire` TEXT, IN `client_id` INT, IN `produit_id` INT)  BEGIN
-	IF (note > 5 || note < 0) THEN
-    	SIGNAL SQLSTATE '45000'
-			SET MESSAGE_TEXT = 'La note doit être comprise entre 0 et 5';
+    IF (note > 5 || note < 0) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La note doit être comprise entre 0 et 5';
     END IF;
 
-	INSERT INTO Avis(date, note, commentaire, client_id, produit_id)
+    INSERT INTO Avis(date, note, commentaire, client_id, produit_id)
     VALUES(NOW(), note, commentaire, client_id, produit_id);
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `CreerClient` (IN `nom` VARCHAR(40), IN `prenom` VARCHAR(40), IN `email` VARCHAR(255), IN `mdpHash` VARCHAR(255))  BEGIN
-	INSERT INTO Client(nom, prenom, email, mdp) VALUES (nom, prenom, email, mdpHash);
+    INSERT INTO Client(nom, prenom, email, mdp) VALUES (nom, prenom, email, mdpHash);
     INSERT INTO Portefeuille(client_id) VALUES(LAST_INSERT_ID());
-    
+
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `CreerPrestataire` (IN `nom` VARCHAR(40), IN `prenom` VARCHAR(40), IN `email` VARCHAR(255), IN `telephone` VARCHAR(15), IN `mdp` VARCHAR(15), IN `rue` VARCHAR(255), IN `codePostal` VARCHAR(5), IN `ville` VARCHAR(40), IN `pays` VARCHAR(40))  BEGIN
-  INSERT
-  	INTO Prestataire(nom, prenom, email, telephone, mdp)
+    INSERT
+    INTO Prestataire(nom, prenom, email, telephone, mdp)
     VALUES(nom, prenom, email, telephone, mdp);
-    
-    
-  CALL CreerAdresse(LAST_INSERT_ID(), 1, rue, codePostal, ville, pays );
-   	
+
+
+    CALL CreerAdresse(LAST_INSERT_ID(), 1, rue, codePostal, ville, pays );
+
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `CreerProduit` (`nom` VARCHAR(255), `prix` FLOAT UNSIGNED, `stock` INT(11), `image` VARCHAR(255), `description` TEXT, `prestataire_id` INT(11))  BEGIN
-    
-      INSERT INTO Produit(nom, prix, stock, image, description, prestataire_id)
-      VALUES(nom,prix, stock, image, description, prestataire_id);
-    
-    END$$
+
+    INSERT INTO Produit(nom, prix, stock, image, description, prestataire_id)
+    VALUES(nom,prix, stock, image, description, prestataire_id);
+
+END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetAvisForProduit` (IN `produit_id` INT)  BEGIN
-   SELECT * FROM Avis AS a WHERE a.produit_id=produit_id;
+    SELECT * FROM Avis AS a WHERE a.produit_id=produit_id;
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetClientParEmail` (IN `email` VARCHAR(255))  BEGIN
-	SELECT * FROM Client AS c WHERE c.email=email;
+    SELECT * FROM Client AS c WHERE c.email=email;
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetClientParId` (IN `id` INT)  BEGIN
-	SELECT * 
-    	FROM Client AS c 
-        WHERE c.id=id;
-    	
+    SELECT *
+    FROM Client AS c
+    WHERE c.id=id;
+
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetFicheProduit` (IN `produit_id` INT)  BEGIN
-   CALL GetProduit(produit_id);
-   CALL GetAvisForProduit(produit_id);
+    CALL GetProduit(produit_id);
+    CALL GetAvisForProduit(produit_id);
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetPaymentHistorique` (IN `clientID` INT)  BEGIN
-	SELECT p.* 
-    	FROM Paiement AS p
-        JOIN Client AS c
- 	       ON c.id=p.client_id
-    	    AND c.id=clientID
-        ORDER BY p.date DESC;
-    	
+    SELECT p.*
+    FROM Paiement AS p
+             JOIN Client AS c
+                  ON c.id=p.client_id
+                      AND c.id=clientID
+    ORDER BY p.date DESC;
+
 END$$
 
 CREATE DEFINER=`root`@`%` PROCEDURE `GetProduit` (IN `id` INT)  BEGIN
-   SELECT * FROM Produit AS p WHERE p.id=id;
+    SELECT * FROM Produit AS p WHERE p.id=id;
+END$$
+
+--
+-- Fonctions
+--
+CREATE DEFINER=`root`@`%` FUNCTION `CalculerSommeCommandeTTC` (`commande_id` INT) RETURNS FLOAT BEGIN
+    DECLARE sommeCommande FLOAT;
+    DECLARE reductionCodePromo FLOAT DEFAULT NULL;
+
+    # Calculer la somme des lignes de commande
+    SET sommeCommande = CalculerSommeLignesCommande(commande_id);
+
+    # Récupérer le code promo s'il y en a un
+    SELECT reduction
+    INTO reductionCodePromo
+    FROM CodePromo as cp
+             JOIN Commande cmd on cp.id = cmd.codepromo_id
+    WHERE cmd.id = commande_id;
+
+    # Si le code promo est valide, appliquer la réduction du code promo
+    IF reductionCodePromo IS NOT NULL THEN
+        SET sommeCommande = sommeCommande - reductionCodePromo;
+    END IF;
+
+
+    # Ajouter les taxes (20%)
+    SET sommeCommande = sommeCommande + (sommeCommande * 0.2);
+
+    RETURN sommeCommande;
+END$$
+
+CREATE DEFINER=`root`@`%` FUNCTION `CalculerSommeLignesCommande` (`commande_id` INT) RETURNS FLOAT BEGIN
+    DECLARE sommeTotale FLOAT;
+
+    # Calculer la somme des lignes de commandes * prix de chaque produit
+    SELECT SUM(line.quantite * prod.prix)
+    INTO sommeTotale
+    FROM LigneCommande as line
+             JOIN Produit as prod
+                  ON line.produit_id = prod.id
+    WHERE line.commande_id = commande_id;
+
+    # Retourner la somme
+    RETURN sommeTotale;
 END$$
 
 DELIMITER ;
@@ -109,13 +208,13 @@ DELIMITER ;
 --
 
 CREATE TABLE `Adresse` (
-  `id` int(11) NOT NULL,
-  `rue` varchar(255) NOT NULL,
-  `codePostal` int(5) UNSIGNED ZEROFILL NOT NULL,
-  `ville` varchar(40) NOT NULL,
-  `pays` varchar(40) NOT NULL,
-  `prestataire_id` int(11) DEFAULT NULL,
-  `client_id` int(11) DEFAULT NULL
+                           `id` int(11) NOT NULL,
+                           `rue` varchar(255) NOT NULL,
+                           `codePostal` int(5) UNSIGNED ZEROFILL NOT NULL,
+                           `ville` varchar(40) NOT NULL,
+                           `pays` varchar(40) NOT NULL,
+                           `prestataire_id` int(11) DEFAULT NULL,
+                           `client_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -123,8 +222,8 @@ CREATE TABLE `Adresse` (
 --
 
 INSERT INTO `Adresse` (`id`, `rue`, `codePostal`, `ville`, `pays`, `prestataire_id`, `client_id`) VALUES
-(2, '1 rue de poitiers', 35042, 'RENNES', 'France', 8, NULL),
-(3, '1 rue de poitiers', 35042, 'RENNES', 'France', 9, NULL);
+                                                                                                      (2, '1 rue de poitiers', 35042, 'RENNES', 'France', 8, NULL),
+                                                                                                      (3, '1 rue de poitiers', 35042, 'RENNES', 'France', 9, NULL);
 
 -- --------------------------------------------------------
 
@@ -133,12 +232,12 @@ INSERT INTO `Adresse` (`id`, `rue`, `codePostal`, `ville`, `pays`, `prestataire_
 --
 
 CREATE TABLE `Avis` (
-  `id` int(11) NOT NULL,
-  `date` date NOT NULL,
-  `note` int(1) NOT NULL DEFAULT 5,
-  `commentaire` text NOT NULL,
-  `client_id` int(11) NOT NULL,
-  `produit_id` int(11) NOT NULL
+                        `id` int(11) NOT NULL,
+                        `date` date NOT NULL,
+                        `note` int(1) NOT NULL DEFAULT 5,
+                        `commentaire` text NOT NULL,
+                        `client_id` int(11) NOT NULL,
+                        `produit_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -146,7 +245,7 @@ CREATE TABLE `Avis` (
 --
 
 INSERT INTO `Avis` (`id`, `date`, `note`, `commentaire`, `client_id`, `produit_id`) VALUES
-(1, '2021-11-16', 5, 'Hello world', 1, 1);
+    (1, '2021-11-16', 5, 'Hello world', 1, 1);
 
 -- --------------------------------------------------------
 
@@ -155,11 +254,11 @@ INSERT INTO `Avis` (`id`, `date`, `note`, `commentaire`, `client_id`, `produit_i
 --
 
 CREATE TABLE `Client` (
-  `id` int(11) NOT NULL,
-  `nom` varchar(40) NOT NULL,
-  `prenom` varchar(40) NOT NULL,
-  `email` varchar(255) NOT NULL,
-  `mdp` varchar(255) NOT NULL
+                          `id` int(11) NOT NULL,
+                          `nom` varchar(40) NOT NULL,
+                          `prenom` varchar(40) NOT NULL,
+                          `email` varchar(255) NOT NULL,
+                          `mdp` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -167,11 +266,11 @@ CREATE TABLE `Client` (
 --
 
 INSERT INTO `Client` (`id`, `nom`, `prenom`, `email`, `mdp`) VALUES
-(1, 'John', 'Doe', 'john@doe.Fr', 'password'),
-(2, 'Aspirateur', 'Doe', 'fredkiss2018@gmail.com', 'password'),
-(3, 'Booba', 'B20', 'b20@booba.fr', 'mdp'),
-(4, 'Jason', 'Statam', 'jason@statam.com', 'jason le boss'),
-(6, 'Jason', 'Statam', 'jason@statam2.com', '$2b$12$vcki/wjSOChdvh6KhWAlwO5pQGePA2wvVMjK7LSldAb1lnHCF8d.m');
+                                                                 (1, 'John', 'Doe', 'john@doe.Fr', 'password'),
+                                                                 (2, 'Aspirateur', 'Doe', 'fredkiss2018@gmail.com', 'password'),
+                                                                 (3, 'Booba', 'B20', 'b20@booba.fr', 'mdp'),
+                                                                 (4, 'Jason', 'Statam', 'jason@statam.com', 'jason le boss'),
+                                                                 (6, 'Jason', 'Statam', 'jason@statam2.com', '$2b$12$vcki/wjSOChdvh6KhWAlwO5pQGePA2wvVMjK7LSldAb1lnHCF8d.m');
 
 -- --------------------------------------------------------
 
@@ -180,13 +279,13 @@ INSERT INTO `Client` (`id`, `nom`, `prenom`, `email`, `mdp`) VALUES
 --
 
 CREATE TABLE `CodePromo` (
-  `id` int(11) NOT NULL,
-  `code` varchar(255) NOT NULL,
-  `sommeMinimum` float NOT NULL,
-  `reduction` float NOT NULL,
-  `dateDebut` date NOT NULL,
-  `dateExpiration` date NOT NULL,
-  `nombreUtilisationMax` int(11) NOT NULL
+                             `id` int(11) NOT NULL,
+                             `code` varchar(255) NOT NULL,
+                             `sommeMinimum` float NOT NULL,
+                             `reduction` float NOT NULL,
+                             `dateDebut` date NOT NULL,
+                             `dateExpiration` date NOT NULL,
+                             `nombreUtilisationMax` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -196,11 +295,11 @@ CREATE TABLE `CodePromo` (
 --
 
 CREATE TABLE `Commande` (
-  `id` int(11) NOT NULL,
-  `date` date NOT NULL,
-  `statut` enum('Expédiée','En Cours de Livraison','Livrée','Remboursée','En préparation') NOT NULL DEFAULT 'En préparation',
-  `codepromo_id` int(11) DEFAULT NULL,
-  `adresse_livraison_id` int(11) NOT NULL
+                            `id` int(11) NOT NULL,
+                            `date` date NOT NULL,
+                            `statut` enum('Expédiée','En Cours de Livraison','Livrée','Remboursée','En préparation') NOT NULL DEFAULT 'En préparation',
+                            `codepromo_id` int(11) DEFAULT NULL,
+                            `adresse_livraison_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -210,12 +309,12 @@ CREATE TABLE `Commande` (
 --
 
 CREATE TABLE `Coupon` (
-  `id` int(11) NOT NULL,
-  `code` varchar(255) NOT NULL,
-  `dateExpiration` date NOT NULL,
-  `somme` float NOT NULL,
-  `utilise` tinyint(1) NOT NULL DEFAULT 0,
-  `client_id` int(11) DEFAULT NULL
+                          `id` int(11) NOT NULL,
+                          `code` varchar(255) NOT NULL,
+                          `dateExpiration` date NOT NULL,
+                          `somme` float NOT NULL,
+                          `utilise` tinyint(1) NOT NULL DEFAULT 0,
+                          `client_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -225,10 +324,10 @@ CREATE TABLE `Coupon` (
 --
 
 CREATE TABLE `LigneCommande` (
-  `id` int(11) NOT NULL,
-  `quantite` int(11) NOT NULL,
-  `commande_id` int(11) NOT NULL,
-  `produit_id` int(11) NOT NULL
+                                 `id` int(11) NOT NULL,
+                                 `quantite` int(11) NOT NULL,
+                                 `commande_id` int(11) NOT NULL,
+                                 `produit_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -238,13 +337,13 @@ CREATE TABLE `LigneCommande` (
 --
 
 CREATE TABLE `Paiement` (
-  `id` int(11) NOT NULL,
-  `mode` enum('BitCoin','PayPal','Carte Bleue','Portefeuille') NOT NULL,
-  `somme` float NOT NULL,
-  `date` date NOT NULL,
-  `commande_id` int(11) NOT NULL,
-  `adresse_facturation_id` int(11) NOT NULL,
-  `client_id` int(11) NOT NULL
+                            `id` int(11) NOT NULL,
+                            `mode` enum('BitCoin','PayPal','Carte Bleue','Portefeuille') NOT NULL,
+                            `somme` float NOT NULL,
+                            `date` date NOT NULL,
+                            `commande_id` int(11) NOT NULL,
+                            `adresse_facturation_id` int(11) NOT NULL,
+                            `client_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -254,9 +353,9 @@ CREATE TABLE `Paiement` (
 --
 
 CREATE TABLE `Portefeuille` (
-  `id` int(11) NOT NULL,
-  `solde` int(11) NOT NULL DEFAULT 0,
-  `client_id` int(11) NOT NULL
+                                `id` int(11) NOT NULL,
+                                `solde` int(11) NOT NULL DEFAULT 0,
+                                `client_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -264,11 +363,11 @@ CREATE TABLE `Portefeuille` (
 --
 
 INSERT INTO `Portefeuille` (`id`, `solde`, `client_id`) VALUES
-(1, 0, 1),
-(2, 0, 2),
-(3, 0, 3),
-(4, 0, 4),
-(5, 0, 6);
+                                                            (1, 0, 1),
+                                                            (2, 0, 2),
+                                                            (3, 0, 3),
+                                                            (4, 0, 4),
+                                                            (5, 0, 6);
 
 -- --------------------------------------------------------
 
@@ -277,12 +376,12 @@ INSERT INTO `Portefeuille` (`id`, `solde`, `client_id`) VALUES
 --
 
 CREATE TABLE `Prestataire` (
-  `id` int(11) NOT NULL,
-  `nom` varchar(40) NOT NULL,
-  `prenom` varchar(40) NOT NULL,
-  `email` varchar(255) NOT NULL,
-  `telephone` varchar(15) NOT NULL,
-  `mdp` varchar(255) NOT NULL
+                               `id` int(11) NOT NULL,
+                               `nom` varchar(40) NOT NULL,
+                               `prenom` varchar(40) NOT NULL,
+                               `email` varchar(255) NOT NULL,
+                               `telephone` varchar(15) NOT NULL,
+                               `mdp` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -290,8 +389,8 @@ CREATE TABLE `Prestataire` (
 --
 
 INSERT INTO `Prestataire` (`id`, `nom`, `prenom`, `email`, `telephone`, `mdp`) VALUES
-(8, 'John', 'Doe', 'john@doe.fr', '+33752424305', 'password'),
-(9, 'John', 'Doe', 'istic-contact@univ-rennes1.fr', '+33223233535', 'password');
+                                                                                   (8, 'John', 'Doe', 'john@doe.fr', '+33752424305', 'password'),
+                                                                                   (9, 'John', 'Doe', 'istic-contact@univ-rennes1.fr', '+33223233535', 'password');
 
 -- --------------------------------------------------------
 
@@ -300,13 +399,13 @@ INSERT INTO `Prestataire` (`id`, `nom`, `prenom`, `email`, `telephone`, `mdp`) V
 --
 
 CREATE TABLE `Produit` (
-  `id` int(11) NOT NULL,
-  `nom` varchar(255) NOT NULL,
-  `prix` float UNSIGNED NOT NULL,
-  `stock` int(11) UNSIGNED NOT NULL DEFAULT 1,
-  `image` varchar(255) NOT NULL,
-  `description` text NOT NULL,
-  `prestataire_id` int(11) NOT NULL DEFAULT 0
+                           `id` int(11) NOT NULL,
+                           `nom` varchar(255) NOT NULL,
+                           `prix` float UNSIGNED NOT NULL,
+                           `stock` int(11) UNSIGNED NOT NULL DEFAULT 1,
+                           `image` varchar(255) NOT NULL,
+                           `description` text NOT NULL,
+                           `prestataire_id` int(11) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -314,7 +413,7 @@ CREATE TABLE `Produit` (
 --
 
 INSERT INTO `Produit` (`id`, `nom`, `prix`, `stock`, `image`, `description`, `prestataire_id`) VALUES
-(1, 'Aspirateur', 2, 1, 'https://picsum.photos/seed/aspi/200/300', 'Généralement, on utilise un texte en faux latin (le texte ne veut rien dire, il a été modifié), le Lorem ipsum ou Lipsum, qui permet donc de faire office de texte d\'attente. L\'avantage de le mettre en latin est que l\'opérateur sait au premier coup d\'oeil que la page contenant ces lignes n\'est pas valide, et surtout l\'attention du client n\'est pas dérangée par le contenu, il demeure concentré seulement sur l\'aspect graphique.  Ce texte a pour autre avantage d\'utiliser des mots de longueur variable, essayant de simuler une occupation normale. La méthode simpliste consistant à copier-coller un court texte plusieurs fois (« ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ») a l\'inconvénient de ne pas permettre une juste appréciation typographique du résultat final.  Il circule des centaines de versions différentes du Lorem ipsum, mais ce texte aurait originellement été tiré de l\'ouvrage de Cicéron, De Finibus Bonorum et Malorum (Liber Primus, 32), texte populaire à cette époque, dont l\'une des premières phrases est : « Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit... » (« Il n\'existe personne qui aime la souffrance pour elle-même, ni qui la recherche ni qui la veuille pour ce qu\'elle est... »).', 8);
+    (1, 'Aspirateur', 2, 1, 'https://picsum.photos/seed/aspi/200/300', 'Généralement, on utilise un texte en faux latin (le texte ne veut rien dire, il a été modifié), le Lorem ipsum ou Lipsum, qui permet donc de faire office de texte d\'attente. L\'avantage de le mettre en latin est que l\'opérateur sait au premier coup d\'oeil que la page contenant ces lignes n\'est pas valide, et surtout l\'attention du client n\'est pas dérangée par le contenu, il demeure concentré seulement sur l\'aspect graphique.  Ce texte a pour autre avantage d\'utiliser des mots de longueur variable, essayant de simuler une occupation normale. La méthode simpliste consistant à copier-coller un court texte plusieurs fois (« ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ceci est un faux-texte ») a l\'inconvénient de ne pas permettre une juste appréciation typographique du résultat final.  Il circule des centaines de versions différentes du Lorem ipsum, mais ce texte aurait originellement été tiré de l\'ouvrage de Cicéron, De Finibus Bonorum et Malorum (Liber Primus, 32), texte populaire à cette époque, dont l\'une des premières phrases est : « Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit... » (« Il n\'existe personne qui aime la souffrance pour elle-même, ni qui la recherche ni qui la veuille pour ce qu\'elle est... »).', 8);
 
 -- --------------------------------------------------------
 
@@ -323,12 +422,12 @@ INSERT INTO `Produit` (`id`, `nom`, `prix`, `stock`, `image`, `description`, `pr
 --
 
 CREATE TABLE `Remboursement` (
-  `id` int(11) NOT NULL,
-  `date` date NOT NULL,
-  `montant` float NOT NULL,
-  `coupon_id` int(11) DEFAULT NULL,
-  `ligne_commande_id` int(11) NOT NULL,
-  `prestataire_id` int(11) NOT NULL
+                                 `id` int(11) NOT NULL,
+                                 `date` date NOT NULL,
+                                 `montant` float NOT NULL,
+                                 `coupon_id` int(11) DEFAULT NULL,
+                                 `ligne_commande_id` int(11) NOT NULL,
+                                 `prestataire_id` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -339,92 +438,92 @@ CREATE TABLE `Remboursement` (
 -- Index pour la table `Adresse`
 --
 ALTER TABLE `Adresse`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_prestataire_id` (`prestataire_id`),
-  ADD KEY `fk_client_id` (`client_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD KEY `fk_prestataire_id` (`prestataire_id`),
+    ADD KEY `fk_client_id` (`client_id`);
 
 --
 -- Index pour la table `Avis`
 --
 ALTER TABLE `Avis`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `client_id` (`client_id`),
-  ADD KEY `fk_produit_avis_id` (`produit_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `client_id` (`client_id`),
+    ADD KEY `fk_produit_avis_id` (`produit_id`);
 
 --
 -- Index pour la table `Client`
 --
 ALTER TABLE `Client`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `email` (`email`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `email` (`email`);
 
 --
 -- Index pour la table `CodePromo`
 --
 ALTER TABLE `CodePromo`
-  ADD PRIMARY KEY (`id`);
+    ADD PRIMARY KEY (`id`);
 
 --
 -- Index pour la table `Commande`
 --
 ALTER TABLE `Commande`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_codepromo_commande_id` (`codepromo_id`),
-  ADD KEY `fk_adresse_livraison_commande_id` (`adresse_livraison_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD KEY `fk_codepromo_commande_id` (`codepromo_id`),
+    ADD KEY `fk_adresse_livraison_commande_id` (`adresse_livraison_id`);
 
 --
 -- Index pour la table `Coupon`
 --
 ALTER TABLE `Coupon`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_client_coupon_id` (`client_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD KEY `fk_client_coupon_id` (`client_id`);
 
 --
 -- Index pour la table `LigneCommande`
 --
 ALTER TABLE `LigneCommande`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_command_ligne_id` (`commande_id`),
-  ADD KEY `fk_produit_ligne_id` (`produit_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD KEY `fk_command_ligne_id` (`commande_id`),
+    ADD KEY `fk_produit_ligne_id` (`produit_id`);
 
 --
 -- Index pour la table `Paiement`
 --
 ALTER TABLE `Paiement`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `commande_id` (`commande_id`),
-  ADD KEY `fk_adresse_facturation_paiement_id` (`adresse_facturation_id`),
-  ADD KEY `fk_client_paiement_id` (`client_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `commande_id` (`commande_id`),
+    ADD KEY `fk_adresse_facturation_paiement_id` (`adresse_facturation_id`),
+    ADD KEY `fk_client_paiement_id` (`client_id`);
 
 --
 -- Index pour la table `Portefeuille`
 --
 ALTER TABLE `Portefeuille`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `client_id` (`client_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `client_id` (`client_id`);
 
 --
 -- Index pour la table `Prestataire`
 --
 ALTER TABLE `Prestataire`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `email` (`email`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `email` (`email`);
 
 --
 -- Index pour la table `Produit`
 --
 ALTER TABLE `Produit`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_product_prestataire_id` (`prestataire_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD KEY `fk_product_prestataire_id` (`prestataire_id`);
 
 --
 -- Index pour la table `Remboursement`
 --
 ALTER TABLE `Remboursement`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `ligne_commande_id` (`ligne_commande_id`),
-  ADD UNIQUE KEY `coupon_id` (`coupon_id`),
-  ADD KEY `fk_prestataire_remboursement_id` (`prestataire_id`);
+    ADD PRIMARY KEY (`id`),
+    ADD UNIQUE KEY `ligne_commande_id` (`ligne_commande_id`),
+    ADD UNIQUE KEY `coupon_id` (`coupon_id`),
+    ADD KEY `fk_prestataire_remboursement_id` (`prestataire_id`);
 
 --
 -- AUTO_INCREMENT pour les tables déchargées
@@ -434,73 +533,73 @@ ALTER TABLE `Remboursement`
 -- AUTO_INCREMENT pour la table `Adresse`
 --
 ALTER TABLE `Adresse`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pour la table `Avis`
 --
 ALTER TABLE `Avis`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pour la table `Client`
 --
 ALTER TABLE `Client`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT pour la table `CodePromo`
 --
 ALTER TABLE `CodePromo`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `Commande`
 --
 ALTER TABLE `Commande`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `Coupon`
 --
 ALTER TABLE `Coupon`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `LigneCommande`
 --
 ALTER TABLE `LigneCommande`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `Paiement`
 --
 ALTER TABLE `Paiement`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT pour la table `Portefeuille`
 --
 ALTER TABLE `Portefeuille`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT pour la table `Prestataire`
 --
 ALTER TABLE `Prestataire`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT pour la table `Produit`
 --
 ALTER TABLE `Produit`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT pour la table `Remboursement`
 --
 ALTER TABLE `Remboursement`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+    MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Contraintes pour les tables déchargées
@@ -510,64 +609,64 @@ ALTER TABLE `Remboursement`
 -- Contraintes pour la table `Adresse`
 --
 ALTER TABLE `Adresse`
-  ADD CONSTRAINT `fk_client_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
-  ADD CONSTRAINT `fk_prestataire_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
+    ADD CONSTRAINT `fk_client_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
+    ADD CONSTRAINT `fk_prestataire_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
 
 --
 -- Contraintes pour la table `Avis`
 --
 ALTER TABLE `Avis`
-  ADD CONSTRAINT `fk_client_avis_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
-  ADD CONSTRAINT `fk_produit_avis_id` FOREIGN KEY (`produit_id`) REFERENCES `Produit` (`id`);
+    ADD CONSTRAINT `fk_client_avis_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
+    ADD CONSTRAINT `fk_produit_avis_id` FOREIGN KEY (`produit_id`) REFERENCES `Produit` (`id`);
 
 --
 -- Contraintes pour la table `Commande`
 --
 ALTER TABLE `Commande`
-  ADD CONSTRAINT `fk_adresse_livraison_commande_id` FOREIGN KEY (`adresse_livraison_id`) REFERENCES `Adresse` (`id`),
-  ADD CONSTRAINT `fk_codepromo_commande_id` FOREIGN KEY (`codepromo_id`) REFERENCES `CodePromo` (`id`);
+    ADD CONSTRAINT `fk_adresse_livraison_commande_id` FOREIGN KEY (`adresse_livraison_id`) REFERENCES `Adresse` (`id`),
+    ADD CONSTRAINT `fk_codepromo_commande_id` FOREIGN KEY (`codepromo_id`) REFERENCES `CodePromo` (`id`);
 
 --
 -- Contraintes pour la table `Coupon`
 --
 ALTER TABLE `Coupon`
-  ADD CONSTRAINT `fk_client_coupon_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`);
+    ADD CONSTRAINT `fk_client_coupon_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`);
 
 --
 -- Contraintes pour la table `LigneCommande`
 --
 ALTER TABLE `LigneCommande`
-  ADD CONSTRAINT `fk_command_ligne_id` FOREIGN KEY (`commande_id`) REFERENCES `Commande` (`id`),
-  ADD CONSTRAINT `fk_produit_ligne_id` FOREIGN KEY (`produit_id`) REFERENCES `Produit` (`id`);
+    ADD CONSTRAINT `fk_command_ligne_id` FOREIGN KEY (`commande_id`) REFERENCES `Commande` (`id`),
+    ADD CONSTRAINT `fk_produit_ligne_id` FOREIGN KEY (`produit_id`) REFERENCES `Produit` (`id`);
 
 --
 -- Contraintes pour la table `Paiement`
 --
 ALTER TABLE `Paiement`
-  ADD CONSTRAINT `fk_adresse_facturation_paiement_id` FOREIGN KEY (`adresse_facturation_id`) REFERENCES `Adresse` (`id`),
-  ADD CONSTRAINT `fk_client_paiement_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
-  ADD CONSTRAINT `fk_commande_paiement_id` FOREIGN KEY (`commande_id`) REFERENCES `Commande` (`id`);
+    ADD CONSTRAINT `fk_adresse_facturation_paiement_id` FOREIGN KEY (`adresse_facturation_id`) REFERENCES `Adresse` (`id`),
+    ADD CONSTRAINT `fk_client_paiement_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`),
+    ADD CONSTRAINT `fk_commande_paiement_id` FOREIGN KEY (`commande_id`) REFERENCES `Commande` (`id`);
 
 --
 -- Contraintes pour la table `Portefeuille`
 --
 ALTER TABLE `Portefeuille`
-  ADD CONSTRAINT `fk_client_portefeuille_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`);
+    ADD CONSTRAINT `fk_client_portefeuille_id` FOREIGN KEY (`client_id`) REFERENCES `Client` (`id`);
 
 --
 -- Contraintes pour la table `Produit`
 --
 ALTER TABLE `Produit`
-  ADD CONSTRAINT `fk_product_prestataire_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
+    ADD CONSTRAINT `fk_product_prestataire_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
 
 --
 -- Contraintes pour la table `Remboursement`
 --
 ALTER TABLE `Remboursement`
-  ADD CONSTRAINT `fk_commande_remboursement_id` FOREIGN KEY (`ligne_commande_id`) REFERENCES `Commande` (`id`),
-  ADD CONSTRAINT `fk_coupon_remboursement_id` FOREIGN KEY (`coupon_id`) REFERENCES `Coupon` (`id`),
-  ADD CONSTRAINT `fk_ligne_commande_remboursement_id` FOREIGN KEY (`ligne_commande_id`) REFERENCES `LigneCommande` (`id`),
-  ADD CONSTRAINT `fk_prestataire_remboursement_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
+    ADD CONSTRAINT `fk_commande_remboursement_id` FOREIGN KEY (`ligne_commande_id`) REFERENCES `Commande` (`id`),
+    ADD CONSTRAINT `fk_coupon_remboursement_id` FOREIGN KEY (`coupon_id`) REFERENCES `Coupon` (`id`),
+    ADD CONSTRAINT `fk_ligne_commande_remboursement_id` FOREIGN KEY (`ligne_commande_id`) REFERENCES `LigneCommande` (`id`),
+    ADD CONSTRAINT `fk_prestataire_remboursement_id` FOREIGN KEY (`prestataire_id`) REFERENCES `Prestataire` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
