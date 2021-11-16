@@ -20,7 +20,7 @@ PORT=3000
 
 # Base de données
 DB_HOST=127.0.0.1
-DB_PORT=3307
+DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=password
 DB_NAME=ragnarok
