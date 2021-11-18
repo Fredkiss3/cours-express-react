@@ -39,7 +39,7 @@ npm install
 ### 4 - Lancer le serveur
 
 ```bash
-npm run start
+npm run serve
 ```
 
 ### 5 - Pour lancer le serveur en production
@@ -49,5 +49,5 @@ npm run start
 npm run build 
 
 # Lancement du serveur
-npm run start
+npm run prod
 ```
