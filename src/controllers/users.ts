@@ -1,6 +1,7 @@
 import { pool } from '../config/database';
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 
 export const creerClient = async (req: Request, res: Response, next: any) => {
     let connexion;
@@ -36,10 +37,20 @@ export const recupererClient = async (
     try {
         connexion = await pool.getConnection();
 
-        const id = req.params[0]; // correspond à => :id
+        const id = res.locals.user.id; // correspond à => :id
 
         const result = await connexion.query(`CALL GetClientParId(?)`, [id]);
-        return res.status(200).json({ success: result });
+
+        const client = result[0][0];
+
+        return res.status(200).json({
+            success: {
+                id: client.id,
+                email: client.email,
+                nom: client.nom,
+                prenom: client.prenom,
+            },
+        });
     } catch (error) {
         // @ts-ignore
         return res.status(400).json({ error: error.message });
@@ -70,9 +81,23 @@ export const authentifierClient = async (
             // Vérifier le mot de passe
             const match = await bcrypt.compare(req.body.mdp, client.mdp);
             if (match) {
+                // Créer le token pour permettre d'authentifier le client
+                const token = jwt.sign(
+                    {
+                        id: client.id,
+                        isClient: true,
+                    },
+                    // @ts-ignore
+                    process.env.JWT_SECRET,
+                    {
+                        expiresIn: '1d',
+                        algorithm: 'HS256',
+                    }
+                );
+
                 return res.status(200).json({
                     success: 'Connexion effectuée avec succès',
-                    client: client,
+                    token: token,
                 });
             } else {
                 return res
