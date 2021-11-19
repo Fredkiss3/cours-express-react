@@ -1,0 +1,34 @@
+.my-button {
+    border-width: 0;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1.3rem;
+}
+
+
+.my-button.blue {
+    background-color: #3498DB;
+}
+
+.my-button.red {
+    background-color: #E74C3C;
+}
+.my-button.small {
+    font-size: 1rem;
+    padding: 0.5rem 0.80rem;
+}
+
+.my-button.medium {
+    padding: 0.5rem 0.80rem;
+}
+
+.my-button.large {
+    font-size: 1.6rem;
+    padding: 0.6rem 0.9rem;
+}
+
+.my-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}

@@ -13,11 +13,6 @@
     "jsx": "react-jsx",
     "moduleResolution": "node",
     "rootDir": "src",
-    "forceConsistentCasingInFileNames": true,
-    "noImplicitReturns": true,
-    "noImplicitThis": true,
-    "noImplicitAny": true,
-    "importHelpers": true,
     "strictNullChecks": true,
     "suppressImplicitAnyIndexErrors": true,
     "noUnusedLocals": true,
@@ -29,7 +24,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "strict": true,
-
+    "forceConsistentCasingInFileNames": true
   },
   "exclude": [
     "node_modules",
